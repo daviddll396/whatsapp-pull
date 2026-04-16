@@ -3,10 +3,11 @@
 Personal WhatsApp pending-thread tracker.
 
 ## MVP
-- ingest personal WhatsApp messages via `whatsapp-web.js`
-- store normalized threads/messages in SQLite
+- ingest personal WhatsApp messages with Baileys
+- store normalized chats/messages in SQLite
 - detect pending threads where last inbound is newer than last outbound
-- generate a daily digest
+- generate a pending digest
+- show recent chat/message view
 
 ## Setup
 1. `cp .env.example .env`
@@ -15,8 +16,10 @@ Personal WhatsApp pending-thread tracker.
 4. `npm start`
 5. scan the QR code with WhatsApp
 6. `npm run digest`
+7. `npm run recent`
 
 ## Notes
 - built for personal use
-- unofficial bridge, may break if WhatsApp changes web behavior
-- keep this on an always-on machine if you want continuous ingestion
+- uses an unofficial WhatsApp bridge
+- keep it on an always-on machine if you want continuous ingestion
+- historical backfill is not the focus right now, live ingestion is
