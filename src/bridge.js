@@ -52,15 +52,20 @@ function extractText(message = {}) {
     message.buttonsResponseMessage?.selectedDisplayText ||
     message.listResponseMessage?.title ||
     ''
-  );
+  ).trim();
 }
 
 function toIso(ms) {
   return new Date(Number(ms) * 1000).toISOString();
 }
 
+const seenMessageIds = new Set();
+
 function syncRecord({ jid, pushName, timestamp, fromMe, messageId, text }) {
   if (!isRealDirectChat(jid)) return;
+  if (!text) return;
+  if (seenMessageIds.has(messageId)) return;
+  seenMessageIds.add(messageId);
   const displayName = pushName || jid.split('@')[0];
   const phone = jid.split('@')[0];
 
