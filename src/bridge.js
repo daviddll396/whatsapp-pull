@@ -65,10 +65,11 @@ const seenMessageIds = new Set();
 function syncRecord({ jid, pushName, timestamp, fromMe, messageId, content, rawMessage }) {
   if (!isRealDirectChat(jid)) return;
   if (!content?.text) return;
+  if (!timestamp) return;
   if (seenMessageIds.has(messageId)) return;
   seenMessageIds.add(messageId);
 
-  const displayName = pushName || jid.split('@')[0];
+  const displayName = pushName || rawMessage?.pushName || jid.split('@')[0];
   const phone = jid.split('@')[0];
 
   upsertContact.run({ wa_id: jid, display_name: displayName, phone_number: phone });
@@ -103,6 +104,26 @@ function syncRecord({ jid, pushName, timestamp, fromMe, messageId, content, rawM
   console.log(`[${direction}] ${displayName}: ${content.text.slice(0, 100)}`);
 }
 
+function processMessage(msg) {
+  const jid = msg.key?.remoteJid || '';
+  if (!isRealDirectChat(jid)) return;
+  if (msg.key?.fromMe === undefined) return;
+  if (!msg.message) return;
+
+  const content = extractVisibleContent(msg.message);
+  if (!content) return;
+
+  syncRecord({
+    jid,
+    pushName: msg.pushName,
+    timestamp: msg.messageTimestamp,
+    fromMe: Boolean(msg.key?.fromMe),
+    messageId: msg.key?.id || `${jid}:${msg.messageTimestamp}`,
+    content,
+    rawMessage: msg
+  });
+}
+
 async function start() {
   const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
   const { version } = await fetchLatestBaileysVersion();
@@ -112,7 +133,10 @@ async function start() {
     auth: state,
     logger,
     printQRInTerminal: false,
-    browser: ['Bob', 'Chrome', '1.0']
+    browser: ['Bob', 'Chrome', '1.0'],
+    syncFullHistory: true,
+    markOnlineOnConnect: false,
+    fireInitQueries: true
   });
 
   sock.ev.on('creds.update', saveCreds);
@@ -135,30 +159,14 @@ async function start() {
     }
   });
 
+  sock.ev.on('messaging-history.set', ({ messages, chats, isLatest, syncType }) => {
+    console.log(`[event] history sync chats=${chats?.length || 0} messages=${messages?.length || 0} latest=${Boolean(isLatest)} syncType=${syncType ?? 'n/a'}`);
+    for (const msg of messages || []) processMessage(msg);
+  });
+
   sock.ev.on('messages.upsert', ({ messages, type }) => {
     console.log(`[event] messages.upsert type=${type} count=${messages?.length || 0}`);
-    for (const msg of messages) {
-      console.log('[raw]', JSON.stringify({ key: msg.key, messageKeys: Object.keys(msg.message || {}), pushName: msg.pushName }, null, 2));
-      const jid = msg.key?.remoteJid || '';
-      if (!isRealDirectChat(jid)) continue;
-      if (msg.key?.fromMe === undefined) continue;
-      if (!msg.message) continue;
-      const content = extractVisibleContent(msg.message);
-      if (!content) {
-        console.log(`[skip] no visible content for ${jid}: ${Object.keys(msg.message || {}).join(',')}`);
-        continue;
-      }
-
-      syncRecord({
-        jid,
-        pushName: msg.pushName,
-        timestamp: msg.messageTimestamp,
-        fromMe: Boolean(msg.key?.fromMe),
-        messageId: msg.key?.id || `${jid}:${msg.messageTimestamp}`,
-        content,
-        rawMessage: msg
-      });
-    }
+    for (const msg of messages || []) processMessage(msg);
   });
 }
 
