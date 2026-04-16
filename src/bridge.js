@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import pino from 'pino';
+import qrcode from 'qrcode-terminal';
 import { DisconnectReason, fetchLatestBaileysVersion, makeWASocket, useMultiFileAuthState } from '@whiskeysockets/baileys';
 import { db } from './db.js';
 
@@ -112,7 +113,7 @@ async function start() {
   sock.ev.on('connection.update', ({ connection, lastDisconnect, qr: qrString }) => {
     if (qrString) {
       console.log('Scan this QR with WhatsApp:');
-      console.log(qrString);
+      qrcode.generate(qrString, { small: true });
     }
 
     if (connection === 'open') {
