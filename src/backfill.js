@@ -56,7 +56,7 @@ async function backfill(limitPerChat = 30, chatLimit = 50) {
     console.log('Backfill started...');
     const chats = await client.getChats();
     const selected = chats
-      .filter(c => !c.isGroup)
+      .filter(c => !c.isGroup && !String(c.id?._serialized || '').includes('status@broadcast'))
       .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
       .slice(0, chatLimit);
 
@@ -69,7 +69,8 @@ async function backfill(limitPerChat = 30, chatLimit = 50) {
       upsertContact.run({ wa_id: waId, display_name: displayName, phone_number: phone });
       const contactRow = getContact.get(waId);
 
-      const messages = await chat.fetchMessages({ limit: limitPerChat });
+      const messages = (await chat.fetchMessages({ limit: limitPerChat }))
+        .filter(msg => !String(msg.from || '').includes('status@broadcast') && !String(msg.to || '').includes('status@broadcast'));
       let lastInbound = null;
       let lastOutbound = null;
       let lastMessageAt = null;
