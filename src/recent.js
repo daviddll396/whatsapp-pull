@@ -1,7 +1,7 @@
 import { db } from './db.js';
 
 const chatLimit = Number(process.argv[2] || 5);
-const messageLimit = Number(process.argv[3] || 10);
+const messageLimit = Number(process.argv[3] || 5);
 
 const chats = db.prepare(`
   SELECT id, title, last_message_at
