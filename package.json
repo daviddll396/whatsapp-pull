@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node src/bridge.js",
     "digest": "node src/digest.js",
-    "init-db": "node src/init-db.js"
+    "init-db": "node src/init-db.js",
+    "backfill": "node src/backfill.js"
   },
   "dependencies": {
     "better-sqlite3": "^11.8.1",

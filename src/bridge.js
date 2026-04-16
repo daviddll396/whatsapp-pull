@@ -1,8 +1,10 @@
 import fs from 'fs';
 import path from 'path';
 import qrcode from 'qrcode-terminal';
-import { Client, LocalAuth } from 'whatsapp-web.js';
+import pkg from 'whatsapp-web.js';
 import { db } from './db.js';
+
+const { Client, LocalAuth } = pkg;
 
 const sessionPath = path.resolve('.session');
 if (!fs.existsSync(sessionPath)) fs.mkdirSync(sessionPath, { recursive: true });
