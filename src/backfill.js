@@ -41,7 +41,7 @@ function toIso(ts) {
   return new Date(ts * 1000).toISOString();
 }
 
-async function backfill(limitPerChat = 30, chatLimit = 50) {
+async function backfill(limitPerChat = 20, chatLimit = 5) {
   const client = new Client({
     authStrategy: new LocalAuth({ dataPath: sessionPath }),
     puppeteer: { headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] }
@@ -75,8 +75,15 @@ async function backfill(limitPerChat = 30, chatLimit = 50) {
       const contactRow = getContact.get(waId);
 
       console.log(`[${index + 1}/${selected.length}] Fetching messages...`);
-      const messages = (await chat.fetchMessages({ limit: limitPerChat }))
-        .filter(msg => !String(msg.from || '').includes('status@broadcast') && !String(msg.to || '').includes('status@broadcast'));
+      let messages = [];
+      try {
+        console.log(`[${index + 1}/${selected.length}] Fetching up to ${limitPerChat} messages...`);
+        messages = (await chat.fetchMessages({ limit: limitPerChat }))
+          .filter(msg => !String(msg.from || '').includes('status@broadcast') && !String(msg.to || '').includes('status@broadcast'));
+      } catch (error) {
+        console.log(`[${index + 1}/${selected.length}] Skipped message fetch for ${chat.name || displayName}: ${error.message}`);
+        continue;
+      }
       let lastInbound = null;
       let lastOutbound = null;
       let lastMessageAt = null;
@@ -127,6 +134,6 @@ async function backfill(limitPerChat = 30, chatLimit = 50) {
   client.initialize();
 }
 
-const limitPerChat = Number(process.argv[2] || 30);
-const chatLimit = Number(process.argv[3] || 50);
+const limitPerChat = Number(process.argv[2] || 20);
+const chatLimit = Number(process.argv[3] || 5);
 backfill(limitPerChat, chatLimit);
