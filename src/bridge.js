@@ -43,6 +43,9 @@ function isRealDirectChat(jid = '') {
 }
 
 function extractVisibleContent(message = {}) {
+  if (!message || typeof message !== 'object') return null;
+  const viewOnce = message.viewOnceMessage?.message || message.viewOnceMessageV2?.message || message.ephemeralMessage?.message;
+  if (viewOnce) return extractVisibleContent(viewOnce);
   if (message.conversation) return { text: message.conversation.trim(), kind: 'text' };
   if (message.extendedTextMessage?.text) return { text: message.extendedTextMessage.text.trim(), kind: 'text' };
   if (message.imageMessage?.caption) return { text: message.imageMessage.caption.trim(), kind: 'image' };
@@ -104,14 +107,17 @@ function syncRecord({ jid, pushName, timestamp, fromMe, messageId, content, rawM
   console.log(`[${direction}] ${displayName}: ${content.text.slice(0, 100)}`);
 }
 
-function processMessage(msg) {
-  const jid = msg.key?.remoteJid || '';
-  if (!isRealDirectChat(jid)) return;
-  if (msg.key?.fromMe === undefined) return;
-  if (!msg.message) return;
+function processMessage(msg, source = 'unknown') {
+  const jid = msg?.key?.remoteJid || '';
+  if (!isRealDirectChat(jid)) return false;
+  if (msg?.key?.fromMe === undefined) return false;
+  if (!msg?.message) return false;
 
   const content = extractVisibleContent(msg.message);
-  if (!content) return;
+  if (!content) {
+    console.log(`[skip:${source}] ${jid} keys=${Object.keys(msg.message || {}).join(',')}`);
+    return false;
+  }
 
   syncRecord({
     jid,
@@ -122,6 +128,7 @@ function processMessage(msg) {
     content,
     rawMessage: msg
   });
+  return true;
 }
 
 async function start() {
@@ -136,7 +143,8 @@ async function start() {
     browser: ['Bob', 'Chrome', '1.0'],
     syncFullHistory: true,
     markOnlineOnConnect: false,
-    fireInitQueries: true
+    fireInitQueries: true,
+    shouldSyncHistoryMessage: () => true,
   });
 
   sock.ev.on('creds.update', saveCreds);
@@ -161,12 +169,20 @@ async function start() {
 
   sock.ev.on('messaging-history.set', ({ messages, chats, isLatest, syncType }) => {
     console.log(`[event] history sync chats=${chats?.length || 0} messages=${messages?.length || 0} latest=${Boolean(isLatest)} syncType=${syncType ?? 'n/a'}`);
-    for (const msg of messages || []) processMessage(msg);
+    for (const msg of messages || []) processMessage(msg, 'history');
   });
 
   sock.ev.on('messages.upsert', ({ messages, type }) => {
     console.log(`[event] messages.upsert type=${type} count=${messages?.length || 0}`);
-    for (const msg of messages || []) processMessage(msg);
+    for (const msg of messages || []) processMessage(msg, `upsert:${type}`);
+  });
+
+  sock.ev.on('chats.upsert', chats => {
+    console.log(`[event] chats.upsert count=${chats?.length || 0}`);
+  });
+
+  sock.ev.on('contacts.upsert', contacts => {
+    console.log(`[event] contacts.upsert count=${contacts?.length || 0}`);
   });
 }
 
