@@ -48,7 +48,15 @@ function iso(ts) {
 }
 
 async function syncMessage(message) {
+  if (!message?.id?._serialized) return;
+  if (String(message.from || '').includes('status@broadcast')) return;
+  if (String(message.to || '').includes('status@broadcast')) return;
+
   const chat = await message.getChat();
+  if (!chat || chat.isGroup) return;
+  if (String(chat.id?._serialized || '').includes('status@broadcast')) return;
+  if (String(chat.id?._serialized || '').includes('@broadcast')) return;
+
   const contact = await message.getContact();
   const waId = contact.id._serialized;
   const phone = contact.number || null;
