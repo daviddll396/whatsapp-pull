@@ -142,7 +142,10 @@ async function start() {
       if (msg.key?.fromMe === undefined) continue;
       if (!msg.message) continue;
       const content = extractVisibleContent(msg.message);
-      if (!content) continue;
+      if (!content) {
+        console.log(`[skip] no visible content for ${jid}: ${Object.keys(msg.message || {}).join(',')}`);
+        continue;
+      }
 
       syncRecord({
         jid,
