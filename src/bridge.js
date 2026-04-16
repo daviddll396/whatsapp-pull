@@ -2,14 +2,13 @@ import fs from 'fs';
 import path from 'path';
 import pino from 'pino';
 import qr from 'qr-image';
-import makeWASocket, { DisconnectReason, fetchLatestBaileysVersion, makeInMemoryStore, useMultiFileAuthState } from '@whiskeysockets/baileys';
+import { DisconnectReason, fetchLatestBaileysVersion, makeWASocket, useMultiFileAuthState } from '@whiskeysockets/baileys';
 import { db } from './db.js';
 
 const sessionPath = path.resolve('.session');
 if (!fs.existsSync(sessionPath)) fs.mkdirSync(sessionPath, { recursive: true });
 
 const logger = pino({ level: 'silent' });
-const store = makeInMemoryStore({ logger });
 
 const upsertContact = db.prepare(`
   INSERT INTO contacts (wa_id, display_name, phone_number, updated_at)
@@ -109,7 +108,6 @@ async function start() {
     browser: ['Bob', 'Chrome', '1.0']
   });
 
-  store.bind(sock.ev);
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('connection.update', ({ connection, lastDisconnect, qr: qrString }) => {
