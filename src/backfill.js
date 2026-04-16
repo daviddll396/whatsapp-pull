@@ -55,12 +55,16 @@ async function backfill(limitPerChat = 30, chatLimit = 50) {
   client.on('ready', async () => {
     console.log('Backfill started...');
     const chats = await client.getChats();
+    console.log(`Fetched ${chats.length} chats.`);
     const selected = chats
       .filter(c => !c.isGroup && !String(c.id?._serialized || '').includes('status@broadcast'))
       .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
       .slice(0, chatLimit);
 
-    for (const chat of selected) {
+    console.log(`Processing ${selected.length} recent chats...`);
+
+    for (const [index, chat] of selected.entries()) {
+      console.log(`[${index + 1}/${selected.length}] Loading chat: ${chat.name || chat.id._serialized}`);
       const contact = await chat.getContact();
       const waId = contact.id._serialized;
       const phone = contact.number || null;
@@ -110,7 +114,7 @@ async function backfill(limitPerChat = 30, chatLimit = 50) {
         );
       }
 
-      console.log(`Backfilled: ${chat.name || displayName}`);
+      console.log(`[${index + 1}/${selected.length}] Backfilled: ${chat.name || displayName} (${messages.length} messages)`);
     }
 
     console.log('Backfill complete.');
