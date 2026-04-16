@@ -55,7 +55,10 @@ async function backfill(limitPerChat = 30, chatLimit = 50) {
   client.on('ready', async () => {
     console.log('Backfill started...');
     const chats = await client.getChats();
-    const selected = chats.filter(c => !c.isGroup).slice(0, chatLimit);
+    const selected = chats
+      .filter(c => !c.isGroup)
+      .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+      .slice(0, chatLimit);
 
     for (const chat of selected) {
       const contact = await chat.getContact();
