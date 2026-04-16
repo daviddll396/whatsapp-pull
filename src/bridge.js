@@ -27,37 +27,34 @@ const upsertThread = db.prepare(`
     title = excluded.title,
     is_group = excluded.is_group,
     last_message_at = excluded.last_message_at,
-    last_inbound_at = COALESCE(excluded.last_inbound_at, threads.last_inbound_at),
-    last_outbound_at = COALESCE(excluded.last_outbound_at, threads.last_outbound_at),
+    last_inbound_at = excluded.last_inbound_at,
+    last_outbound_at = excluded.last_outbound_at,
     pending = excluded.pending,
     updated_at = CURRENT_TIMESTAMP
 `);
-const getThread = db.prepare('SELECT id, last_inbound_at, last_outbound_at FROM threads WHERE wa_chat_id = ?');
+const getThread = db.prepare('SELECT id FROM threads WHERE wa_chat_id = ?');
 const insertMessage = db.prepare(`
-  INSERT OR IGNORE INTO messages (wa_message_id, thread_id, contact_id, direction, body, sent_at, raw_json)
+  INSERT OR REPLACE INTO messages (wa_message_id, thread_id, contact_id, direction, body, sent_at, raw_json)
   VALUES (?, ?, ?, ?, ?, ?, ?)
 `);
-const updateThreadPending = db.prepare(`
-  UPDATE threads
-  SET last_inbound_at = ?, last_outbound_at = ?, pending = ?, last_message_at = ?, updated_at = CURRENT_TIMESTAMP
-  WHERE id = ?
-`);
 
-function iso(ts) {
+function isRealDirectChat(chat) {
+  const id = String(chat?.id?._serialized || '');
+  if (!chat) return false;
+  if (chat.isGroup) return false;
+  if (!id || id.includes('status@broadcast') || id.includes('@broadcast')) return false;
+  return id.endsWith('@c.us') || id.endsWith('@lid');
+}
+
+function toIso(ts) {
+  if (!ts) return null;
   return new Date(ts * 1000).toISOString();
 }
 
-async function syncMessage(message) {
-  if (!message?.id?._serialized) return;
-  if (String(message.from || '').includes('status@broadcast')) return;
-  if (String(message.to || '').includes('status@broadcast')) return;
+async function syncChat(chat) {
+  if (!isRealDirectChat(chat)) return;
 
-  const chat = await message.getChat();
-  if (!chat || chat.isGroup) return;
-  if (String(chat.id?._serialized || '').includes('status@broadcast')) return;
-  if (String(chat.id?._serialized || '').includes('@broadcast')) return;
-
-  const contact = await message.getContact();
+  const contact = await chat.getContact();
   const waId = contact.id._serialized;
   const phone = contact.number || null;
   const displayName = contact.pushname || contact.name || phone || waId;
@@ -65,19 +62,18 @@ async function syncMessage(message) {
   upsertContact.run({ wa_id: waId, display_name: displayName, phone_number: phone });
   const contactRow = getContact.get(waId);
 
-  const direction = message.fromMe ? 'outbound' : 'inbound';
-  const sentAt = iso(message.timestamp);
+  const lastMsg = chat.lastMessage;
+  if (!lastMsg) return;
 
-  const existingThread = getThread.get(chat.id._serialized);
-  const lastInbound = direction === 'inbound' ? sentAt : (existingThread?.last_inbound_at || null);
-  const lastOutbound = direction === 'outbound' ? sentAt : (existingThread?.last_outbound_at || null);
-  const pending = lastInbound && (!lastOutbound || lastInbound > lastOutbound) ? 1 : 0;
+  const direction = lastMsg.fromMe ? 'outbound' : 'inbound';
+  const sentAt = toIso(lastMsg.timestamp);
+  const pending = direction === 'inbound' ? 1 : 0;
 
   upsertThread.run({
     wa_chat_id: chat.id._serialized,
     contact_id: contactRow.id,
     title: chat.name || displayName,
-    is_group: chat.isGroup ? 1 : 0,
+    is_group: 0,
     last_message_at: sentAt,
     last_inbound_at: direction === 'inbound' ? sentAt : null,
     last_outbound_at: direction === 'outbound' ? sentAt : null,
@@ -86,17 +82,32 @@ async function syncMessage(message) {
 
   const threadRow = getThread.get(chat.id._serialized);
   insertMessage.run(
-    message.id._serialized,
+    lastMsg.id?._serialized || `${chat.id._serialized}:${lastMsg.timestamp}`,
     threadRow.id,
     contactRow.id,
     direction,
-    message.body || '',
+    lastMsg.body || '',
     sentAt,
-    JSON.stringify({ type: message.type })
+    JSON.stringify({ type: lastMsg.type || null })
   );
 
-  updateThreadPending.run(lastInbound, lastOutbound, pending, sentAt, threadRow.id);
-  console.log(`[${direction}] ${chat.name || displayName}: ${(message.body || '').slice(0, 80)}`);
+  console.log(`[sync] ${chat.name || displayName}: ${(lastMsg.body || '').slice(0, 80)}`);
+}
+
+async function syncRecentChats(client) {
+  const chats = await client.getChats();
+  const selected = chats
+    .filter(isRealDirectChat)
+    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+    .slice(0, 50);
+
+  for (const chat of selected) {
+    try {
+      await syncChat(chat);
+    } catch (error) {
+      console.error(`[sync-error] ${chat.name || chat.id._serialized}: ${error.message}`);
+    }
+  }
 }
 
 const client = new Client({
@@ -112,11 +123,30 @@ client.on('qr', qr => {
   qrcode.generate(qr, { small: true });
 });
 
-client.on('ready', () => console.log('WhatsApp bridge ready.'));
-client.on('message', syncMessage);
-client.on('message_create', async msg => {
-  if (msg.fromMe) await syncMessage(msg);
+client.on('ready', async () => {
+  console.log('WhatsApp bridge ready.');
+  await syncRecentChats(client);
 });
+
+client.on('message', async msg => {
+  try {
+    const chat = await msg.getChat();
+    await syncChat(chat);
+  } catch (error) {
+    console.error(`[message-error] ${error.message}`);
+  }
+});
+
+client.on('message_create', async msg => {
+  if (!msg.fromMe) return;
+  try {
+    const chat = await msg.getChat();
+    await syncChat(chat);
+  } catch (error) {
+    console.error(`[message-create-error] ${error.message}`);
+  }
+});
+
 client.on('auth_failure', msg => console.error('Auth failure:', msg));
 client.on('disconnected', reason => console.error('Disconnected:', reason));
 
