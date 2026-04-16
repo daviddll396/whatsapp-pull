@@ -135,8 +135,10 @@ async function start() {
     }
   });
 
-  sock.ev.on('messages.upsert', ({ messages }) => {
+  sock.ev.on('messages.upsert', ({ messages, type }) => {
+    console.log(`[event] messages.upsert type=${type} count=${messages?.length || 0}`);
     for (const msg of messages) {
+      console.log('[raw]', JSON.stringify({ key: msg.key, messageKeys: Object.keys(msg.message || {}), pushName: msg.pushName }, null, 2));
       const jid = msg.key?.remoteJid || '';
       if (!isRealDirectChat(jid)) continue;
       if (msg.key?.fromMe === undefined) continue;
