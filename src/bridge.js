@@ -1,7 +1,6 @@
 import fs from 'fs';
 import path from 'path';
 import pino from 'pino';
-import qr from 'qr-image';
 import { DisconnectReason, fetchLatestBaileysVersion, makeWASocket, useMultiFileAuthState } from '@whiskeysockets/baileys';
 import { db } from './db.js';
 
@@ -113,7 +112,7 @@ async function start() {
   sock.ev.on('connection.update', ({ connection, lastDisconnect, qr: qrString }) => {
     if (qrString) {
       console.log('Scan this QR with WhatsApp:');
-      process.stdout.write(qr.imageSync(qrString, { type: 'terminal' }));
+      console.log(qrString);
     }
 
     if (connection === 'open') {
