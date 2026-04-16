@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import pino from 'pino';
 import qrcode from 'qrcode-terminal';
-import { DisconnectReason, fetchLatestBaileysVersion, makeWASocket, useMultiFileAuthState } from '@whiskeysockets/baileys';
+import { DisconnectReason, fetchLatestBaileysVersion, isJidUser, makeWASocket, useMultiFileAuthState } from '@whiskeysockets/baileys';
 import { db } from './db.js';
 
 const sessionPath = path.resolve('.session');
@@ -39,20 +39,21 @@ const insertMessage = db.prepare(`
 `);
 
 function isRealDirectChat(jid = '') {
-  return jid.endsWith('@s.whatsapp.net');
+  return Boolean(jid) && isJidUser(jid) && !jid.includes('status@broadcast') && !jid.includes('@broadcast');
 }
 
-function extractText(message = {}) {
-  return (
-    message.conversation ||
-    message.extendedTextMessage?.text ||
-    message.imageMessage?.caption ||
-    message.videoMessage?.caption ||
-    message.documentMessage?.caption ||
-    message.buttonsResponseMessage?.selectedDisplayText ||
-    message.listResponseMessage?.title ||
-    ''
-  ).trim();
+function extractVisibleContent(message = {}) {
+  if (message.conversation) return { text: message.conversation.trim(), kind: 'text' };
+  if (message.extendedTextMessage?.text) return { text: message.extendedTextMessage.text.trim(), kind: 'text' };
+  if (message.imageMessage?.caption) return { text: message.imageMessage.caption.trim(), kind: 'image' };
+  if (message.videoMessage?.caption) return { text: message.videoMessage.caption.trim(), kind: 'video' };
+  if (message.documentMessage?.caption) return { text: message.documentMessage.caption.trim(), kind: 'document' };
+  if (message.audioMessage) return { text: '[Voice note]', kind: 'audio' };
+  if (message.stickerMessage) return { text: '[Sticker]', kind: 'sticker' };
+  if (message.imageMessage) return { text: '[Image]', kind: 'image' };
+  if (message.videoMessage) return { text: '[Video]', kind: 'video' };
+  if (message.documentMessage) return { text: '[Document]', kind: 'document' };
+  return null;
 }
 
 function toIso(ms) {
@@ -61,11 +62,12 @@ function toIso(ms) {
 
 const seenMessageIds = new Set();
 
-function syncRecord({ jid, pushName, timestamp, fromMe, messageId, text }) {
+function syncRecord({ jid, pushName, timestamp, fromMe, messageId, content, rawMessage }) {
   if (!isRealDirectChat(jid)) return;
-  if (!text) return;
+  if (!content?.text) return;
   if (seenMessageIds.has(messageId)) return;
   seenMessageIds.add(messageId);
+
   const displayName = pushName || jid.split('@')[0];
   const phone = jid.split('@')[0];
 
@@ -93,12 +95,12 @@ function syncRecord({ jid, pushName, timestamp, fromMe, messageId, text }) {
     threadRow.id,
     contactRow.id,
     direction,
-    text,
+    content.text,
     sentAt,
-    JSON.stringify({})
+    JSON.stringify({ kind: content.kind, key: rawMessage?.key || null })
   );
 
-  console.log(`[${direction}] ${displayName}: ${(text || '').slice(0, 100)}`);
+  console.log(`[${direction}] ${displayName}: ${content.text.slice(0, 100)}`);
 }
 
 async function start() {
@@ -138,14 +140,18 @@ async function start() {
       const jid = msg.key?.remoteJid || '';
       if (!isRealDirectChat(jid)) continue;
       if (msg.key?.fromMe === undefined) continue;
-      const text = extractText(msg.message || {});
+      if (!msg.message) continue;
+      const content = extractVisibleContent(msg.message);
+      if (!content) continue;
+
       syncRecord({
         jid,
         pushName: msg.pushName,
         timestamp: msg.messageTimestamp,
         fromMe: Boolean(msg.key?.fromMe),
         messageId: msg.key?.id || `${jid}:${msg.messageTimestamp}`,
-        text
+        content,
+        rawMessage: msg
       });
     }
   });
