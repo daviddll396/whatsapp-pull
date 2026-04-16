@@ -54,6 +54,7 @@ async function backfill(limitPerChat = 30, chatLimit = 50) {
 
   client.on('ready', async () => {
     console.log('Backfill started...');
+    console.log('Loading chats from WhatsApp Web...');
     const chats = await client.getChats();
     console.log(`Fetched ${chats.length} chats.`);
     const selected = chats
@@ -73,6 +74,7 @@ async function backfill(limitPerChat = 30, chatLimit = 50) {
       upsertContact.run({ wa_id: waId, display_name: displayName, phone_number: phone });
       const contactRow = getContact.get(waId);
 
+      console.log(`[${index + 1}/${selected.length}] Fetching messages...`);
       const messages = (await chat.fetchMessages({ limit: limitPerChat }))
         .filter(msg => !String(msg.from || '').includes('status@broadcast') && !String(msg.to || '').includes('status@broadcast'));
       let lastInbound = null;
